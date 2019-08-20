@@ -1,11 +1,13 @@
 package com.hm.iou.thinapk.plugin
 
+
 import org.objectweb.asm.*
 
 import java.util.jar.JarEntry
 import java.util.jar.JarFile
 import java.util.jar.JarOutputStream
 import java.util.zip.ZipEntry
+
 /**
  * 优化处理R文件
  */
@@ -63,6 +65,20 @@ class RClassUtil {
     static void replaceAndDeleteRInfo(File classFile, ThinApkRExtension extension) {
         def fullClassName = getFullClassName(classFile.getAbsolutePath())
         //如果是除了R&styleable.class的除外
+        if (isRsClass(classFile.getAbsolutePath())) {
+            println("class = ${classFile.getAbsolutePath()}")
+            new FileInputStream(classFile).withStream { InputStream is ->
+                byte[] bytes = replaceRsInfo(is.bytes)
+                def newClassFile = new File(classFile.getParentFile(), classFile.name + ".tmp")
+                new FileOutputStream(newClassFile).withStream { OutputStream os ->
+                    os.write(bytes)
+                }
+
+                classFile.delete()
+                newClassFile.renameTo(classFile)
+            }
+        }
+
         if (isRFileExceptStyleable(classFile.getAbsolutePath())) {
             ThinApkRExtension.KeepRInfo keepRInfo = extension.shouldKeepRFile(fullClassName)
             if (keepRInfo != null) {
@@ -99,7 +115,7 @@ class RClassUtil {
                 }
 
             } else {
-                println "没有字段需要keep，直接删除该R文件：${fullClassName}"
+//                println "没有字段需要keep，直接删除该R文件：${fullClassName}"
                 classFile.delete()
             }
         } else {
@@ -133,6 +149,7 @@ class RClassUtil {
                     newClassFile.renameTo(classFile)
                 }
             } else {
+//                println("pyfpyfpyf 普通的类信息: ${classFile.getAbsolutePath()}")
                 //如果是普通的类信息，则将引用 R 类的地方替换成 int 值
                 new FileInputStream(classFile).withStream { InputStream is ->
                     byte[] bytes = replaceRInfo(is.bytes)
@@ -165,7 +182,13 @@ class RClassUtil {
                     ZipEntry zipEntry = new ZipEntry(entry.name)
                     byte[] bytes = inputStream.bytes
                     if (entry.name.endsWith(".class")) {
-                        bytes = replaceRInfo(bytes)
+                        String[] names = entry.name.split("/")
+                        if (isRsClass(entry.name)) {
+                            println("zhangyu3== Rs file name = " + entry.name)
+                            bytes = replaceRsInfo(bytes)
+                        } else {
+                            bytes = replaceRInfo(bytes)
+                        }
                     }
                     if (bytes != null) {
                         jarOutputStream.putNextEntry(zipEntry)
@@ -190,8 +213,16 @@ class RClassUtil {
      */
     private static byte[] replaceRInfo(byte[] bytes) {
         ClassReader classReader = new ClassReader(bytes)
-        ClassWriter classWriter = new ClassWriter(0)
+        ClassWriter classWriter = new ClassWriter(classReader, 0)
+        String className = ""
         ClassVisitor classVisitor = new ClassVisitor(Opcodes.ASM5, classWriter) {
+
+            @Override
+            void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
+//                println("class name => " + name)
+                className = name
+                super.visit(version, access, name, signature, superName, interfaces)
+            }
 
             @Override
             MethodVisitor visitMethod(int access, String name, String desc, String signature, String[] exceptions) {
@@ -202,14 +233,37 @@ class RClassUtil {
                         String key = owner + name1
                         Integer value = mRInfoMap.get(key)
                         if (value != null) {
-                            println "替换对R.class的直接引用：${owner} - ${name1}"
+//                            println "替换对R.class的直接引用：${owner} - ${name1}, className = ${className}, methodName = " +
+//                                    "${name}"
                             super.visitLdcInsn(value)
                         } else {
+//                            println("我没有找到！！！！！！：${owner} - ${name1}")
+//                            println("current key = ${key}")
                             super.visitFieldInsn(opcode, owner, name1, desc1)
                         }
                     }
                 }
                 return methodVisitor
+            }
+
+
+        }
+        classReader.accept(classVisitor, 0)
+        return classWriter.toByteArray()
+    }
+
+    private static byte[] replaceRsInfo(byte[] bytes) {
+        ClassReader classReader = new ClassReader(bytes)
+        ClassWriter classWriter = new ClassWriter(classReader, 0)
+        String className = ""
+        ClassVisitor classVisitor = new ClassVisitor(Opcodes.ASM4, classWriter) {
+
+            @Override
+            FieldVisitor visitField(int access, String name, String desc, String signature, Object value) {
+                if (value instanceof Integer) {
+                    return null
+                }
+                return super.visitField(access, name, desc, signature, value)
             }
         }
         classReader.accept(classVisitor, 0)
@@ -236,6 +290,22 @@ class RClassUtil {
         classFilePath ==~ '''.*/R\\$(?!styleable).*?\\.class|.*/R\\.class'''
     }
 
+
+    //"com/scwang/smartrefresh/layout/Rs$styleable"
+    public static boolean isRsClass(String classFilePath) {
+        classFilePath ==~ '''.*/Rs\\$.*\\.class|.*/Rs\\.class'''
+    }
+
+    /**
+     * 判断该 class 文件是否是 Rs.class 类，及其内部类如 R$id.class，但是 R$styleable.class 类排除在外
+     *
+     * @param classFilePath
+     * @return
+     */
+    static boolean isRsFileExceptStyleable(String classFilePath) {
+        classFilePath ==~ '''.*/Rs\\$(?!styleable).*?\\.class|.*/Rs\\.class'''
+    }
+
     /**
      * 从形如 ~/HM-ThinApk/app/build/intermediates/classes/debug/com/hm/library1/R.class 的类路径中截取出 com/hm/library1/R.class
      * 根据Android Studio版本的不同，编译配置不同，路径也可能不同，例如：app/build/intermediates/javac/officialDebug/compileOfficialDebugJavaWithJavac/classes/android/arch/lifecycle/R.class
@@ -246,7 +316,7 @@ class RClassUtil {
      * @return 返回类似 "com/hm/library1/R.class"、"com/hm/library1/R$mipmap.class"，其实就是类的全路径class名
      */
     static String getFullClassName(String filePath) {
-        println "${filePath}"
+//        println "before save ${filePath}"
 
         String mode = "/debug/"
         int index = filePath.indexOf(mode)
@@ -255,14 +325,29 @@ class RClassUtil {
             index = filePath.indexOf(mode)
         }
         if (index != -1) {
-            return filePath.substring(index) - "${mode}"
+            filePath = filePath.substring(index) - "${mode}"
+            //还有种情况，去除掉debug之前的路径名之后，还有一个 数字分割
+            String firstIndex = filePath.split("/")[0]
+            if (isNum(firstIndex)) {
+                filePath = filePath.substring(firstIndex.length() + 1)
+            }
+            return filePath
         }
 
         index = filePath.indexOf("/classes")
         filePath = filePath.substring(index) - "/classes" - "/debug" - "/release"
+        //去除 /
         filePath = filePath.substring(1)
-        println filePath
         return filePath
+    }
+
+    static boolean isNum(String str) {
+        try {
+            Integer.parseInt(str)
+            return true
+        } catch (Exception e) {
+            return false
+        }
     }
 
 }

@@ -6,13 +6,14 @@ buildscript {
         google()
         jcenter()
         maven { url 'https://jitpack.io' }
+        maven { url "${rootDir}${File.separator}thinRepo" }
     }
     dependencies {
         classpath 'com.android.tools.build:gradle:3.0.1'
         classpath 'com.jakewharton:butterknife-gradle-plugin:8.4.0'
 
         classpath 'com.github.dcendents:android-maven-gradle-plugin:2.0'
-        classpath 'com.github.houjinyun:Android-ThinApk:1.0'
+        classpath 'com.yy.mobile.thinRPlugin:thinR:1.0.0'
     }
 }
 

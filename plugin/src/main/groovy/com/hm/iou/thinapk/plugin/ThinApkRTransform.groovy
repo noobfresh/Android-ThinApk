@@ -53,6 +53,8 @@ class ThinApkRTransform extends Transform {
 
         println "----第一次遍历，开始收集R类信息----"
         inputs.each { TransformInput input ->
+//            println("TransformInput -> " + input)
+//            println()
             //第一次循环，只是为了收集 R.java 类信息
             input.directoryInputs.each { DirectoryInput directoryInput ->
                 if (directoryInput.file.isDirectory()) {
@@ -95,10 +97,19 @@ class ThinApkRTransform extends Transform {
                 if (directoryInput.file.isDirectory()) {
                     directoryInput.file.eachFileRecurse {File file ->
                         if (file.isFile()) {
+                            if (!file.name.contains(".class")) {
+                                return
+                            }
+                            if (file.name.contains("R")) {
+//                                println("zhangyu1== Rs file name = " + file.absolutePath)
+                            }
                             RClassUtil.replaceAndDeleteRInfo(file, extension)
                         }
                     }
                 } else {
+                    if (directoryInput.file.name.contains("R")) {
+                        println("zhangyu2== Rs file name = " + directoryInput.file.absolutePath)
+                    }
                     RClassUtil.replaceAndDeleteRInfo(directoryInput.file, extension)
                 }
 
@@ -109,7 +120,7 @@ class ThinApkRTransform extends Transform {
 
         //处理 jar 包里的 class
         for (File jarFile : jarList) {
-            println "处理Jar包里的R信息：${jarFile.getAbsolutePath()}"
+//            println "处理Jar包里的R信息：${jarFile.getAbsolutePath()}"
             RClassUtil.replaceAndDeleteRInfoFromJar(jarFile, extension)
         }
 
